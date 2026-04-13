@@ -212,15 +212,9 @@ def search_hotels(city: str, check_in: str = None, check_out: str = None, budget
     except requests.exceptions.RequestException as e:
         return f"请求酒店信息失败: {str(e)}"
 
-@tool
-def get_attractions(city: str, interests: str = None) -> str:
+def _get_attractions(city: str, interests: str = None) -> str:
     """
-    使用高德地图 API 搜索城市内的旅游景点。
-    Args:
-        city: 城市名称，如"北京"、"上海"、"保定"
-        interests: 兴趣偏好，如"历史"、"自然"、"美食"等，可选
-    Returns:
-        景点推荐的格式化字符串
+    底层函数：使用高德地图 API 搜索城市内的旅游景点（可直接调用）
     """
     api_key = os.getenv("GAODE_MAP_API_KEY")
     if not api_key:
@@ -290,13 +284,93 @@ def get_attractions(city: str, interests: str = None) -> str:
 
 
 @tool
-def get_weather(city: str) -> str:
+def get_attractions(city: str, interests: str = None) -> str:
     """
-    使用高德地图 API 查询城市实时天气。
+    使用高德地图 API 搜索城市内的旅游景点。
     Args:
         city: 城市名称，如"北京"、"上海"、"保定"
+        interests: 兴趣偏好，如"历史"、"自然"、"美食"等，可选
     Returns:
-        天气信息的格式化字符串，包含温度、湿度、风向、天气状况
+        景点推荐的格式化字符串
+    """
+    return _get_attractions(city, interests)
+
+
+def _get_spot_detail(spot_name: str) -> str:
+    """
+    底层函数：查询特定景点的详细信息
+    """
+    api_key = os.getenv("GAODE_MAP_API_KEY")
+    if not api_key:
+        return "错误：未找到高德地图 API 密钥。"
+    
+    base_url = "https://restapi.amap.com/v3/place/text"
+    
+    params = {
+        "key": api_key,
+        "keywords": spot_name,
+        "offset": 3,
+        "page": 1,
+        "extensions": "all"
+    }
+    
+    try:
+        response = requests.get(base_url, params=params, timeout=10)
+        data = response.json()
+        
+        if data.get("status") != "1":
+            return f"查询失败: {data.get('info', '未知错误')}"
+        
+        pois = data.get("pois", [])
+        if not pois:
+            return f"未找到'{spot_name}'的详细信息。"
+        
+        # 取最匹配的第一个结果
+        spot = pois[0]
+        name = spot.get("name", "未知")
+        address = spot.get("address", "地址未知")
+        tel = spot.get("tel", "")
+        rating = spot.get("biz_ext", {}).get("rating", "")
+        typecode = spot.get("type", "")
+        
+        result = f"【{name}】\n\n"
+        result += f"地址: {address}\n"
+        if tel:
+            result += f"电话: {tel}\n"
+        if rating and rating != "[]":
+            result += f"评分: {rating}\n"
+        if typecode:
+            result += f"类型: {typecode}\n"
+        
+        # 如果有更多结果，显示相似景点
+        if len(pois) > 1:
+            result += "\n【相似景点】\n"
+            for i, similar in enumerate(pois[1:3], 1):
+                sim_name = similar.get("name", "未知")
+                sim_address = similar.get("address", "地址未知")
+                result += f"{i}. {sim_name} - {sim_address}\n"
+        
+        return result
+        
+    except requests.exceptions.RequestException as e:
+        return f"请求景点信息失败: {str(e)}"
+
+
+@tool
+def get_spot_detail(spot_name: str) -> str:
+    """
+    查询特定景点的详细信息。
+    Args:
+        spot_name: 景点名称，如"故宫博物院"、"颐和园"、"保定植物园"
+    Returns:
+        景点的详细信息，包含地址、电话、评分等
+    """
+    return _get_spot_detail(spot_name)
+
+
+def _get_weather(city: str) -> str:
+    """
+    底层函数：使用高德地图 API 查询城市实时天气（可直接调用）
     """
     api_key = os.getenv("GAODE_MAP_API_KEY")
     if not api_key:
@@ -336,3 +410,15 @@ def get_weather(city: str) -> str:
         
     except requests.exceptions.RequestException as e:
         return f"请求天气信息失败: {str(e)}"
+
+
+@tool
+def get_weather(city: str) -> str:
+    """
+    使用高德地图 API 查询城市实时天气。
+    Args:
+        city: 城市名称，如"北京"、"上海"、"保定"
+    Returns:
+        天气信息的格式化字符串，包含温度、湿度、风向、天气状况
+    """
+    return _get_weather(city)

@@ -1,75 +1,16 @@
 # web_app.py
-# 旅行规划助手 Web 版本
+# 旅行规划助手 Web 版本（多智能体架构）
 
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
-import re
-from langchain_deepseek import ChatDeepSeek
-from langchain.agents import create_agent
-import config
-from tools import get_navigation, search_hotels, get_attractions, get_weather, _do_navigation
+import sys
+sys.path.append('d:\\0travel_agent')
+
+from agents import master_agent_chat
+from tools import _do_navigation, get_attractions, search_hotels, get_weather
 
 app = Flask(__name__)
 CORS(app)
-
-# 初始化
-llm = ChatDeepSeek(
-    model=config.MODEL_NAME,
-    temperature=0.7,
-    max_tokens=4096
-)
-
-tools = [get_navigation, search_hotels, get_attractions, get_weather]
-
-system_prompt = """你是一个专业的旅行规划助手，帮助用户制定旅行计划。
-
-## 可用工具
-1. get_attractions(city, interests) - 查询城市景点
-2. search_hotels(city) - 查询城市酒店
-3. get_navigation(origin, destination, mode) - 查询两地路线
-
-## 工作规则
-1. 分析用户需求，主动调用工具获取信息
-2. 信息足够时直接生成完整方案，禁止反复反问
-3. 缺少关键信息时，最多询问一次
-
-## 输出格式
-- 使用 Markdown 格式
-- 包含：交通建议、住宿推荐、每日行程、预算估算"""
-
-agent = create_agent(
-    model=llm,
-    tools=tools,
-    system_prompt=system_prompt
-)
-
-
-def travel_agent_chat(user_input: str) -> str:
-    """与旅行规划Agent进行对话"""
-    user_input_clean = user_input.strip()
-    
-    # 处理导航请求
-    nav_with_origin = re.search(r'从(.+?)到(.+?)(怎么走|怎么导航|怎么走|$)', user_input_clean)
-    if nav_with_origin:
-        origin = nav_with_origin.group(1).strip()
-        destination = nav_with_origin.group(2).strip()
-        if origin and destination:
-            return _do_navigation(origin, destination)
-    
-    nav_simple = re.search(r'(导航到|怎么去|如何到达)(.+)', user_input_clean)
-    if nav_simple:
-        destination = nav_simple.group(2).strip()
-        return f"请告诉我您的出发地，例如：'从北京天安门到{destination}'"
-    
-    try:
-        result = agent.invoke(
-            {"messages": [{"role": "user", "content": user_input}]}
-        )
-        if "messages" in result:
-            return result["messages"][-1].content
-        return str(result)
-    except Exception as e:
-        return f"抱歉，处理您的问题时出现错误：{str(e)}"
 
 
 @app.route('/')
@@ -80,14 +21,14 @@ def index():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """API接口"""
+    """API接口 - 使用主控智能体进行路由"""
     data = request.json
     user_input = data.get('message', '')
     
     if not user_input:
         return jsonify({'error': '请输入内容'}), 400
     
-    response = travel_agent_chat(user_input)
+    response = master_agent_chat(user_input)
     return jsonify({'response': response})
 
 
@@ -147,9 +88,14 @@ def weather():
 
 
 if __name__ == '__main__':
+    import logging
+    # 关闭 LangChain 的详细日志
+    logging.getLogger('langchain').setLevel(logging.WARNING)
+    
     print("=" * 50)
-    print("旅行规划助手 Web 服务")
+    print("旅行规划助手 Web 服务（多智能体版本）")
     print("=" * 50)
     print("访问地址: http://127.0.0.1:5000")
     print("=" * 50)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # debug=False 关闭自动重载和详细日志
+    app.run(debug=False, host='0.0.0.0', port=5000)
